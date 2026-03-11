@@ -1,0 +1,163 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ──
+
+enum DayOfWeek {
+  TUESDAY
+  THURSDAY
+}
+
+enum WebinarStatus {
+  UPCOMING
+  LIVE
+  COMPLETED
+}
+
+enum OrderStatus {
+  NEW
+  PAID
+  CANCELLED
+}
+
+enum AttributionType {
+  DIRECT
+  DEFERRED
+  UNATTRIBUTED
+}
+
+// ── Models ──
+
+model Webinar {
+  id             String        @id @default(uuid())
+  scheduledAt    DateTime      @map("scheduled_at")
+  regWindowStart DateTime      @map("reg_window_start")
+  regWindowEnd   DateTime      @map("reg_window_end")
+  dayOfWeek      DayOfWeek     @map("day_of_week")
+  status         WebinarStatus @default(UPCOMING)
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  registrations Registration[]
+  attendances   Attendance[]
+  orders        Order[]        @relation("AttributedWebinar")
+
+  @@map("webinars")
+}
+
+model Contact {
+  id          String   @id @default(uuid())
+  gcUserId    String?  @unique @map("gc_user_id")
+  email       String?  @map("email")
+  phone       String?  @map("phone")
+  name        String?  @map("name")
+  firstSeenAt DateTime @default(now()) @map("first_seen_at")
+
+  registrations Registration[]
+  attendances   Attendance[]
+  orders        Order[]
+
+  @@index([email])
+  @@index([phone])
+  @@map("contacts")
+}
+
+model Registration {
+  id           String   @id @default(uuid())
+  contactId    String   @map("contact_id")
+  webinarId    String   @map("webinar_id")
+  gcDealId     String   @unique @map("gc_deal_id")
+  utmSource    String?  @map("utm_source")
+  utmMedium    String?  @map("utm_medium")
+  utmCampaign  String?  @map("utm_campaign")
+  utmContent   String?  @map("utm_content")
+  utmTerm      String?  @map("utm_term")
+  customLabels Json?    @map("custom_labels")
+  registeredAt DateTime @map("registered_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  contact Contact @relation(fields: [contactId], references: [id])
+  webinar Webinar @relation(fields: [webinarId], references: [id])
+
+  @@index([webinarId])
+  @@index([contactId])
+  @@map("registrations")
+}
+
+model Attendance {
+  id         String   @id @default(uuid())
+  contactId  String   @map("contact_id")
+  webinarId  String   @map("webinar_id")
+  gcDealId   String   @unique @map("gc_deal_id")
+  attendedAt DateTime @map("attended_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  contact Contact @relation(fields: [contactId], references: [id])
+  webinar Webinar @relation(fields: [webinarId], references: [id])
+  orders  Order[] @relation("LastAttendance")
+
+  @@index([webinarId])
+  @@index([contactId])
+  @@index([attendedAt])
+  @@map("attendances")
+}
+
+model Order {
+  id                   String          @id @default(uuid())
+  contactId            String          @map("contact_id")
+  attributedWebinarId  String?         @map("attributed_webinar_id")
+  lastAttendanceId     String?         @map("last_attendance_id")
+  gcDealId             String          @unique @map("gc_deal_id")
+  status               OrderStatus     @default(NEW)
+  amount               Decimal?        @map("amount") @db.Decimal(12, 2)
+  productName          String?         @map("product_name")
+  attributionType      AttributionType @map("attribution_type")
+  orderedAt            DateTime        @map("ordered_at")
+  paidAt               DateTime?       @map("paid_at")
+  createdAt            DateTime        @default(now()) @map("created_at")
+
+  contact           Contact     @relation(fields: [contactId], references: [id])
+  attributedWebinar Webinar?    @relation("AttributedWebinar", fields: [attributedWebinarId], references: [id])
+  lastAttendance    Attendance? @relation("LastAttendance", fields: [lastAttendanceId], references: [id])
+
+  @@index([attributedWebinarId])
+  @@index([contactId])
+  @@index([status])
+  @@index([attributionType])
+  @@map("orders")
+}
+
+model WebhookLog {
+  id        String   @id @default(uuid())
+  eventType String   @map("event_type")
+  payload   Json     @map("payload")
+  processed Boolean  @default(false)
+  error     String?  @map("error")
+  receivedAt DateTime @default(now()) @map("received_at")
+
+  @@index([eventType])
+  @@index([processed])
+  @@map("webhook_log")
+}
+
+model Setting {
+  id    String @id @default(uuid())
+  key   String @unique
+  value String
+
+  @@map("settings")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String // bcrypt hash
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("users")
+}
