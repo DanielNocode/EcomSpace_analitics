@@ -1,0 +1,35 @@
+{
+  "name": "webinar-pulse",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Real-time webinar funnel analytics platform",
+  "workspaces": [
+    "packages/shared",
+    "packages/api",
+    "packages/web"
+  ],
+  "scripts": {
+    "dev": "docker compose up -d",
+    "down": "docker compose down",
+    "logs:api": "docker compose logs -f api",
+    "logs:web": "docker compose logs -f web",
+    "test": "npm run test --workspaces --if-present",
+    "test:api": "npm run test -w packages/api",
+    "build": "npm run build --workspaces --if-present",
+    "build:api": "npm run build -w packages/api",
+    "build:shared": "npm run build -w packages/shared",
+    "lint": "npm run lint --workspaces --if-present",
+    "lint:api": "npm run lint -w packages/api",
+    "db:migrate": "npx prisma migrate dev",
+    "db:reset": "npx prisma migrate reset",
+    "db:generate": "npx prisma generate",
+    "db:seed": "npx tsx prisma/seed.ts"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma",
+    "seed": "npx tsx prisma/seed.ts"
+  }
+}

@@ -1,0 +1,68 @@
+version: "3.9"
+
+services:
+  # ── PostgreSQL ──
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pulse
+      POSTGRES_PASSWORD: pulse
+      POSTGRES_DB: webinar_pulse
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulse -d webinar_pulse"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── API (бэкенд) ──
+  api:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+      - "5555:5555"
+    environment:
+      DATABASE_URL: postgresql://pulse:pulse@postgres:5432/webinar_pulse
+      DATABASE_URL_TEST: postgresql://pulse:pulse@postgres:5432/webinar_pulse_test
+      API_PORT: 3000
+      NODE_ENV: development
+      JWT_SECRET: dev-secret-change-in-prod
+      WEBHOOK_API_KEY: dev-key-change-in-prod
+      ATTRIBUTION_WINDOW_HOURS: 72
+    volumes:
+      - ./packages/api/src:/app/packages/api/src
+      - ./packages/shared/src:/app/packages/shared/src
+      - ./prisma:/app/prisma
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Web (фронтенд) — placeholder for Phase 2 ──
+  web:
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:3000
+
+volumes:
+  pg_data:
