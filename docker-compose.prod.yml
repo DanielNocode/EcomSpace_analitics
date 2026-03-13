@@ -1,0 +1,75 @@
+services:
+  # ── PostgreSQL (изолированный, только для WebinarPulse) ──
+  wp-postgres:
+    image: postgres:16-alpine
+    container_name: wp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-pulse}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-webinar_pulse}
+    volumes:
+      - wp_pg_data:/var/lib/postgresql/data
+    networks:
+      - wp-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-pulse} -d ${DB_NAME:-webinar_pulse}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── API (Fastify бэкенд) ──
+  wp-api:
+    container_name: wp-api
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile.prod
+    restart: unless-stopped
+    depends_on:
+      wp-postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-pulse}:${DB_PASSWORD}@wp-postgres:5432/${DB_NAME:-webinar_pulse}
+      API_PORT: "3000"
+      NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET}
+      WEBHOOK_API_KEY: ${WEBHOOK_API_KEY}
+    networks:
+      - wp-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Web (nginx — статика + прокси к API) ──
+  wp-web:
+    container_name: wp-web
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile.prod
+    restart: unless-stopped
+    depends_on:
+      wp-api:
+        condition: service_healthy
+    networks:
+      - wp-internal
+      - nginx_proxy_manager_default  # ← NPM видит этот контейнер
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  wp_pg_data:
+
+networks:
+  # Внутренняя сеть: postgres ↔ api ↔ web
+  wp-internal:
+    driver: bridge
+
+  # Подключение к существующей сети NPM
+  nginx_proxy_manager_default:
+    external: true
