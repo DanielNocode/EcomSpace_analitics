@@ -1,2 +1,2 @@
-# EcomSpace_analitics-main
+# EcomSpace_analitics - платформа аналитики
 
