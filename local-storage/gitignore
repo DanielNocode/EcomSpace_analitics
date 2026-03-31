@@ -1,0 +1,25 @@
+node_modules/
+dist/
+.env
+*.log
+
+# Prisma
+packages/api/prisma/migrations/**/migration_lock.toml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+pg_data/
+
+# Build
+packages/web/dist/
+packages/api/dist/
+packages/shared/dist/

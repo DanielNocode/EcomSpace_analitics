@@ -1,0 +1,80 @@
+version: "3.9"
+
+services:
+  # ── PostgreSQL ──
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ecomspace}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ecomspace}
+      POSTGRES_DB: ${POSTGRES_DB:-ecomspace_analytics}
+    # Security: listen only on localhost (not exposed to external network)
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ecomspace} -d ${POSTGRES_DB:-ecomspace_analytics}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - internal
+
+  # ── API (бэкенд) ──
+  api:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Security: only expose on localhost, nginx will proxy
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:5555:5555"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ecomspace}:${POSTGRES_PASSWORD:-ecomspace}@postgres:5432/${POSTGRES_DB:-ecomspace_analytics}
+      DATABASE_URL_TEST: postgresql://${POSTGRES_USER:-ecomspace}:${POSTGRES_PASSWORD:-ecomspace}@postgres:5432/${POSTGRES_DB:-ecomspace_analytics}_test
+      API_PORT: 3000
+      NODE_ENV: ${NODE_ENV:-development}
+    volumes:
+      - ./packages/api/src:/app/packages/api/src
+      - ./packages/shared/src:/app/packages/shared/src
+      - ./prisma:/app/prisma
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - internal
+
+  # ── Web (фронтенд) ──
+  web:
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "127.0.0.1:5173:5173"
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+    networks:
+      - internal
+
+volumes:
+  pgdata:
+    name: ecomspace_pgdata
+
+networks:
+  internal:
+    driver: bridge

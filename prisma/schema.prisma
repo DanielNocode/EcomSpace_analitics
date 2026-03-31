@@ -1,0 +1,280 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ──
+
+enum WebinarStatus {
+  UPCOMING
+  LIVE
+  COMPLETED
+}
+
+enum OrderStatus {
+  NEW
+  PAID
+  CANCELLED
+}
+
+enum AttributionType {
+  DIRECT
+  DEFERRED
+  UNATTRIBUTED
+}
+
+enum UserRole {
+  ADMIN
+  VIEWER
+}
+
+// ── Models ──
+
+model Webinar {
+  id          String        @id @default(uuid())
+  scheduledAt DateTime      @unique @map("scheduled_at")
+  title       String?       @map("title")
+  status      WebinarStatus @default(UPCOMING)
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  registrations Registration[]
+  attendances   Attendance[]
+  orders        Order[]        @relation("AttributedWebinar")
+  bizonReports  BizonReport[]
+
+  @@index([scheduledAt])
+  @@map("webinars")
+}
+
+model Contact {
+  id          String   @id @default(uuid())
+  gcUserId    String?  @unique @map("gc_user_id")
+  email       String?  @map("email")
+  phone       String?  @map("phone")
+  name        String?  @map("name")
+  firstSeenAt DateTime @default(now()) @map("first_seen_at")
+
+  registrations Registration[]
+  attendances   Attendance[]
+  orders        Order[]
+
+  @@index([email])
+  @@index([phone])
+  @@map("contacts")
+}
+
+model Registration {
+  id           String   @id @default(uuid())
+  contactId    String   @map("contact_id")
+  webinarId    String   @map("webinar_id")
+  gcDealId     String   @unique @map("gc_deal_id")
+  funnel       String?  @map("funnel")
+  isDuplicate  Boolean  @default(false) @map("is_duplicate")
+  utmSource    String?  @map("utm_source")
+  utmMedium    String?  @map("utm_medium")
+  utmCampaign  String?  @map("utm_campaign")
+  utmContent   String?  @map("utm_content")
+  utmTerm      String?  @map("utm_term")
+  customLabels Json?    @map("custom_labels")
+  registeredAt DateTime @map("registered_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  contact Contact @relation(fields: [contactId], references: [id])
+  webinar Webinar @relation(fields: [webinarId], references: [id])
+
+  @@index([webinarId])
+  @@index([contactId])
+  @@index([funnel])
+  @@index([isDuplicate])
+  @@map("registrations")
+}
+
+model Attendance {
+  id              String   @id @default(uuid())
+  contactId       String   @map("contact_id")
+  webinarId       String   @map("webinar_id")
+  gcDealId        String   @unique @map("gc_deal_id")
+  attendedAt      DateTime @map("attended_at")
+  durationMinutes Int?     @map("duration_minutes")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  contact Contact @relation(fields: [contactId], references: [id])
+  webinar Webinar @relation(fields: [webinarId], references: [id])
+  orders  Order[] @relation("LastAttendance")
+
+  @@index([webinarId])
+  @@index([contactId])
+  @@index([attendedAt])
+  @@map("attendances")
+}
+
+model Order {
+  id                   String          @id @default(uuid())
+  contactId            String          @map("contact_id")
+  attributedWebinarId  String?         @map("attributed_webinar_id")
+  lastAttendanceId     String?         @map("last_attendance_id")
+  gcDealId             String          @unique @map("gc_deal_id")
+  status               OrderStatus     @default(NEW)
+  amount               Decimal?        @map("amount") @db.Decimal(12, 2)
+  productName          String?         @map("product_name")
+  attributionType      AttributionType @map("attribution_type")
+  orderedAt            DateTime        @map("ordered_at")
+  paidAt               DateTime?       @map("paid_at")
+  createdAt            DateTime        @default(now()) @map("created_at")
+
+  contact           Contact     @relation(fields: [contactId], references: [id])
+  attributedWebinar Webinar?    @relation("AttributedWebinar", fields: [attributedWebinarId], references: [id])
+  lastAttendance    Attendance? @relation("LastAttendance", fields: [lastAttendanceId], references: [id])
+
+  @@index([attributedWebinarId])
+  @@index([contactId])
+  @@index([status])
+  @@index([attributionType])
+  @@map("orders")
+}
+
+model WebhookLog {
+  id         String   @id @default(uuid())
+  eventType  String   @map("event_type")
+  payload    Json     @map("payload")
+  processed  Boolean  @default(false)
+  error      String?  @map("error")
+  receivedAt DateTime @default(now()) @map("received_at")
+
+  @@index([eventType])
+  @@index([processed])
+  @@map("webhook_log")
+}
+
+model Setting {
+  id    String @id @default(uuid())
+  key   String @unique
+  value String
+
+  @@map("settings")
+}
+
+model User {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  name      String    @map("name")
+  password  String    // bcrypt hash
+  role      UserRole  @default(VIEWER)
+  active    Boolean   @default(true)
+  banned    Boolean   @default(false)
+  bannedAt  DateTime? @map("banned_at")
+  banReason String?   @map("ban_reason")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+// ── Bizon365 Report Models ──
+
+model BizonReport {
+  id               String   @id @default(uuid())
+  webinarId        String?  @map("webinar_id")
+  roomId           String   @map("room_id")
+  roomTitle        String?  @map("room_title")
+  startedAt        DateTime @map("started_at")
+  durationMinutes  Int      @map("duration_minutes")
+  peakViewers      Int      @map("peak_viewers")
+  totalViewers     Int      @map("total_viewers")
+  partnerViewers   Int      @default(0) @map("partner_viewers")
+  totalOrders      Int      @default(0) @map("total_orders")
+  totalRevenue     Decimal  @default(0) @map("total_revenue") @db.Decimal(12, 2)
+  buttonClicks     Int      @default(0) @map("button_clicks")
+  bannerClicks     Int      @default(0) @map("banner_clicks")
+  orderPageViews   Int      @default(0) @map("order_page_views")
+  buttonClickRate  Float    @default(0) @map("button_click_rate")
+  bannerClickRate  Float    @default(0) @map("banner_click_rate")
+  commentsCount    Int      @default(0) @map("comments_count")
+  avgWatchPercent  Float?   @map("avg_watch_percent")
+  viewerTimeline   Json?    @map("viewer_timeline")
+  rawFileName      String?  @map("raw_file_name")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  webinar      Webinar?            @relation(fields: [webinarId], references: [id])
+  viewers      BizonReportViewer[]
+  chatMessages BizonChatMessage[]
+
+  @@index([webinarId])
+  @@index([startedAt])
+  @@map("bizon_reports")
+}
+
+model BizonReportViewer {
+  id            String   @id @default(uuid())
+  reportId      String   @map("report_id")
+  bizonViewerId String?  @map("bizon_viewer_id")
+  name          String?  @map("name")
+  email         String?  @map("email")
+  phone         String?  @map("phone")
+  ip            String?  @map("ip")
+  joinedAt      String?  @map("joined_at")
+  leftAt        String?  @map("left_at")
+  durationMin   Int?     @map("duration_min")
+  watchPercent  Float?   @map("watch_percent")
+  device        String?  @map("device")
+  city          String?  @map("city")
+  region        String?  @map("region")
+  utmSource     String?  @map("utm_source")
+  utmMedium     String?  @map("utm_medium")
+  utmCampaign   String?  @map("utm_campaign")
+  utmContent    String?  @map("utm_content")
+  utmTerm       String?  @map("utm_term")
+  clickedButton Boolean  @default(false) @map("clicked_button")
+  clickedBanner Boolean  @default(false) @map("clicked_banner")
+  openedOrder   Boolean  @default(false) @map("opened_order")
+  madeOrder     Boolean  @default(false) @map("made_order")
+  isBanned      Boolean  @default(false) @map("is_banned")
+  entryUrl      String?  @map("entry_url")
+  referrer      String?  @map("referrer")
+  intervals     Json?    @map("intervals")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  report BizonReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@index([email])
+  @@map("bizon_report_viewers")
+}
+
+model BizonChatMessage {
+  id         String   @id @default(uuid())
+  reportId   String   @map("report_id")
+  time       String   @map("time")
+  senderId   String?  @map("sender_id")
+  senderName String?  @map("sender_name")
+  message    String   @map("message")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  report BizonReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@map("bizon_chat_messages")
+}
+
+// ── Anomaly Detection ──
+
+model Anomaly {
+  id         String   @id @default(uuid())
+  type       String   @map("type")
+  severity   String   @default("MEDIUM") @map("severity")
+  message    String   @map("message")
+  metadata   Json?    @map("metadata")
+  webinarId  String?  @map("webinar_id")
+  resolved   Boolean  @default(false)
+  detectedAt DateTime @default(now()) @map("detected_at")
+
+  @@index([type])
+  @@index([resolved])
+  @@index([detectedAt])
+  @@index([webinarId])
+  @@map("anomalies")
+}
